@@ -1,0 +1,383 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h2 class="mb-3">备份与恢复</h2>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">📤 数据备份</h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">创建并下载当前数据库备份文件</p>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-success" id="createBackupBtn" onclick="createBackup()">
+                        <span>💾</span> 创建备份
+                    </button>
+                    <button class="btn btn-outline-primary" id="downloadLatestBtn" onclick="downloadLatestBackup()" disabled>
+                        <span>⬇️</span> 下载最新备份
+                    </button>
+                </div>
+                <hr>
+                <h6>当前数据库信息</h6>
+                <div class="list-group list-group-flush" id="dbInfo">
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <span>数据库版本</span>
+                        <span class="badge bg-secondary">v10.0</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <span>磁带数量</span>
+                        <span class="badge bg-primary" id="tapeCount">0</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <span>文件数量</span>
+                        <span class="badge bg-info" id="fileCount">0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">📥 数据恢复</h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">上传备份文件进行恢复</p>
+                <div class="mb-3">
+                    <label for="backupFile" class="form-label">选择备份文件</label>
+                    <input type="file" class="form-control" id="backupFile" accept=".db,.sqlite">
+                </div>
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="verifyBackup" checked>
+                        <label class="form-check-label" for="verifyBackup">
+                            校验备份文件完整性（SHA-256）
+                        </label>
+                    </div>
+                </div>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-warning" id="restoreBtn" onclick="uploadBackup()">
+                        <span>🔄</span> 恢复备份
+                    </button>
+                </div>
+                <hr>
+                <div class="alert alert-info" role="alert">
+                    <strong>注意：</strong>恢复操作将覆盖当前数据库，系统会自动备份当前数据。
+                </div>
+                <div id="uploadProgress" class="d-none">
+                    <div class="progress mb-2">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             id="progressBar" style="width: 0%"></div>
+                    </div>
+                    <p class="text-center" id="progressText">准备中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">📊 备份文件列表</h5>
+                <button class="btn btn-sm btn-outline-secondary" onclick="loadBackupList()">
+                    <span>🔄</span> 刷新
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>文件名</th>
+                                <th>大小</th>
+                                <th>创建时间</th>
+                                <th>SHA-256</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="backupList">
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-4">
+                                    <div class="spinner-border spinner-border-sm me-2" role="status">
+                                        <span class="visually-hidden">加载中...</span>
+                                    </div>
+                                    加载中...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="alertModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="alertModalTitle">提示</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="alertModalBody"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let latestBackupFile = null;
+
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function formatDate(isoString) {
+    const date = new Date(isoString);
+    return date.toLocaleString('zh-CN');
+}
+
+function showAlert(title, message, isSuccess = true) {
+    document.getElementById('alertModalTitle').textContent = title;
+    document.getElementById('alertModalBody').innerHTML = message;
+    const modal = new bootstrap.Modal(document.getElementById('alertModal'));
+    modal.show();
+}
+
+function loadDbInfo() {
+    fetch('/api/tapes')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('tapeCount').textContent = data.length;
+        });
+    
+    fetch('/api/files')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('fileCount').textContent = data.count || 0;
+        });
+}
+
+async function createBackup() {
+    const btn = document.getElementById('createBackupBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>创建中...';
+    
+    try {
+        const response = await fetch('/api/backup/create', {
+            method: 'POST'
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            latestBackupFile = data.backup_file;
+            document.getElementById('downloadLatestBtn').disabled = false;
+            showAlert('成功', `备份创建成功！<br>文件名: ${data.backup_file}<br>大小: ${formatFileSize(data.file_size)}`);
+            loadBackupList();
+        } else {
+            showAlert('错误', data.message || '备份创建失败', false);
+        }
+    } catch (error) {
+        showAlert('错误', '请求失败: ' + error.message, false);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>💾</span> 创建备份';
+    }
+}
+
+function downloadLatestBackup() {
+    if (latestBackupFile) {
+        window.location.href = `/api/backup/download/${latestBackupFile}`;
+    }
+}
+
+function downloadBackup(filename) {
+    window.location.href = `/api/backup/download/${filename}`;
+}
+
+async function restoreBackup(filename) {
+    if (!confirm(`确定要恢复备份文件 ${filename} 吗？\n\n系统会自动备份当前数据。`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/backup/restore', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ filename: filename })
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            showAlert('成功', '备份恢复成功！');
+            loadDbInfo();
+            loadBackupList();
+        } else {
+            showAlert('错误', data.message || '恢复失败', false);
+        }
+    } catch (error) {
+        showAlert('错误', '请求失败: ' + error.message, false);
+    }
+}
+
+async function deleteBackup(filename) {
+    if (!confirm(`确定要删除备份文件 ${filename} 吗？`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/backup/delete/${filename}`, {
+            method: 'DELETE'
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            showAlert('成功', '备份文件删除成功！');
+            loadBackupList();
+        } else {
+            showAlert('错误', data.message || '删除失败', false);
+        }
+    } catch (error) {
+        showAlert('错误', '请求失败: ' + error.message, false);
+    }
+}
+
+async function uploadBackup() {
+    const fileInput = document.getElementById('backupFile');
+    const verifyBackup = document.getElementById('verifyBackup').checked;
+    
+    if (!fileInput.files.length) {
+        showAlert('提示', '请先选择备份文件', false);
+        return;
+    }
+    
+    const file = fileInput.files[0];
+    
+    if (!confirm(`确定要恢复备份文件 ${file.name} 吗？\n\n系统会自动备份当前数据。`)) {
+        return;
+    }
+    
+    const progressDiv = document.getElementById('uploadProgress');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    const restoreBtn = document.getElementById('restoreBtn');
+    
+    progressDiv.classList.remove('d-none');
+    restoreBtn.disabled = true;
+    progressBar.style.width = '10%';
+    progressText.textContent = '上传中...';
+    
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('verify', verifyBackup);
+        
+        const response = await fetch('/api/backup/upload', {
+            method: 'POST',
+            body: formData
+        });
+        
+        progressBar.style.width = '70%';
+        progressText.textContent = '处理中...';
+        
+        const data = await response.json();
+        
+        progressBar.style.width = '100%';
+        
+        if (data.success) {
+            progressText.textContent = '完成！';
+            showAlert('成功', '备份恢复成功！');
+            loadDbInfo();
+            loadBackupList();
+        } else {
+            progressText.textContent = '失败';
+            showAlert('错误', data.message || '恢复失败', false);
+        }
+    } catch (error) {
+        progressText.textContent = '失败';
+        showAlert('错误', '请求失败: ' + error.message, false);
+    } finally {
+        setTimeout(() => {
+            progressDiv.classList.add('d-none');
+            progressBar.style.width = '0%';
+            restoreBtn.disabled = false;
+        }, 2000);
+    }
+}
+
+async function loadBackupList() {
+    const tbody = document.getElementById('backupList');
+    
+    try {
+        const response = await fetch('/api/backup/list');
+        const data = await response.json();
+        
+        if (data.success && data.backups.length > 0) {
+            latestBackupFile = data.backups[0].filename;
+            document.getElementById('downloadLatestBtn').disabled = false;
+            
+            tbody.innerHTML = data.backups.map(backup => `
+                <tr>
+                    <td><code>${backup.filename}</code></td>
+                    <td>${formatFileSize(backup.size)}</td>
+                    <td>${formatDate(backup.created_at)}</td>
+                    <td><small class="text-muted">—</small></td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="downloadBackup('${backup.filename}')">
+                            下载
+                        </button>
+                        <button class="btn btn-sm btn-outline-warning" onclick="restoreBackup('${backup.filename}')">
+                            恢复
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteBackup('${backup.filename}')">
+                            删除
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        } else {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center text-muted py-4">
+                        暂无备份文件
+                    </td>
+                </tr>
+            `;
+            document.getElementById('downloadLatestBtn').disabled = true;
+        }
+    } catch (error) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center text-danger py-4">
+                    加载失败: ${error.message}
+                </td>
+            </tr>
+        `;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadDbInfo();
+    loadBackupList();
+});
+</script>
+{% endblock %}

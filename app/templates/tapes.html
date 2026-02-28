@@ -1,0 +1,348 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h2 class="mb-3">磁带管理</h2>
+    </div>
+</div>
+
+<!-- 磁带状态信息 -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">当前磁带状态</h5>
+    </div>
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div id="currentTapeInfo">
+                <strong>未挂载</strong>
+                <span class="status-badge status-unmounted">未挂载</span>
+            </div>
+            <div id="operationButtons">
+                <button class="btn btn-success" onclick="mountTape()">挂载</button>
+            </div>
+        </div>
+        
+        <!-- 操作进度条 -->
+        <div id="operationProgress" class="d-none">
+            <div class="progress mb-2" style="height: 30px;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                     id="progressBar" 
+                     role="progressbar" 
+                     style="width: 0%"></div>
+            </div>
+            <p class="text-center text-muted" id="progressText">准备中...</p>
+        </div>
+    </div>
+</div>
+
+<!-- 磁带列表 -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">磁带信息</h5>
+    </div>
+    <div class="card-body">
+        {% if tapes %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>条形码</th>
+                        <th>标签</th>
+                        <th>状态</th>
+                        <th>容量</th>
+                        <th>已使用</th>
+                        <th>更新时间</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tape in tapes %}
+                    <tr>
+                        <td><strong>{{ tape.barcode }}</strong></td>
+                        <td>{{ tape.label or '-' }}</td>
+                        <td>
+                            <span class="status-badge status-{{ tape.status }}">
+                                {% if tape.status == 'mounted' %}已挂载
+                                {% elif tape.status == 'unmounted' %}未挂载
+                                {% elif tape.status == 'ejected' %}已弹出
+                                {% else %}{{ tape.status }}{% endif %}
+                            </span>
+                        </td>
+                        <td>{{ tape.capacity or '-' }}</td>
+                        <td>{{ tape.used_space or '-' }}</td>
+                        <td>{{ tape.updated_at.strftime('%Y-%m-%d %H:%M') if tape.updated_at else '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <p class="text-muted mb-4">暂无磁带数据</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 页面加载时获取当前磁带状态
+document.addEventListener('DOMContentLoaded', function() {
+    loadCurrentTapeStatus();
+});
+
+function loadCurrentTapeStatus() {
+    fetch('/api/tape/current')
+    .then(response => response.json())
+    .then(data => {
+        const infoElement = document.getElementById('currentTapeInfo');
+        
+        if (data.success) {
+            const tape = data.tape;
+            
+            // 只有 status 是 mounted 或 unmounted 时才显示磁带信息
+            // 如果是 ejected，则不显示
+            if (tape.status === 'mounted' || tape.status === 'unmounted') {
+                infoElement.innerHTML = `
+                    <strong>${tape.barcode}</strong>
+                    <span class="status-badge status-${tape.status}">
+                        ${getStatusText(tape.status)}
+                    </span>
+                `;
+                renderOperationButtons(tape.status);
+            } else {
+                // 弹出状态，显示为空
+                infoElement.innerHTML = `
+                    <strong>未挂载</strong>
+                    <span class="status-badge status-unmounted">未挂载</span>
+                `;
+                renderOperationButtons('unmounted');
+            }
+        } else {
+            // 没有磁带信息
+            infoElement.innerHTML = `
+                <strong>未挂载</strong>
+                <span class="status-badge status-unmounted">未挂载</span>
+            `;
+            renderOperationButtons('unmounted');
+        }
+    })
+    .catch(error => {
+        console.error('获取当前磁带状态失败:', error);
+        const infoElement = document.getElementById('currentTapeInfo');
+        infoElement.innerHTML = `
+            <strong>未挂载</strong>
+            <span class="status-badge status-unmounted">未挂载</span>
+        `;
+        renderOperationButtons('unmounted');
+    });
+}
+
+function renderOperationButtons(status) {
+    const buttonContainer = document.getElementById('operationButtons');
+    buttonContainer.innerHTML = '';
+    
+    if (status === 'mounted') {
+        // 已挂载状态，显示卸载按钮
+        buttonContainer.innerHTML = `
+            <button class="btn btn-warning" onclick="unmountTape()">卸载</button>
+        `;
+    } else if (status === 'unmounted') {
+        // 已卸载状态，显示挂载和弹出按钮
+        buttonContainer.innerHTML = `
+            <button class="btn btn-success" onclick="mountTape()">挂载</button>
+            <button class="btn btn-danger" onclick="ejectTape()">弹出</button>
+        `;
+    } else if (status === 'ejected') {
+        // 已弹出状态，显示已弹出文本
+        buttonContainer.innerHTML = '<span class="text-muted">已弹出</span>';
+    } else {
+        // 其他状态，显示挂载按钮
+        buttonContainer.innerHTML = `
+            <button class="btn btn-success" onclick="mountTape()">挂载</button>
+        `;
+    }
+}
+
+function getStatusText(status) {
+    const statusMap = {
+        'mounted': '已挂载',
+        'unmounted': '未挂载',
+        'ejected': '已弹出'
+    };
+    return statusMap[status] || status;
+}
+
+// 全局变量
+let currentOperationId = null;
+let progressPollingInterval = null;
+
+// 显示进度条
+function showProgress() {
+    document.getElementById('operationProgress').classList.remove('d-none');
+}
+
+// 隐藏进度条
+function hideProgress() {
+    document.getElementById('operationProgress').classList.add('d-none');
+    if (progressPollingInterval) {
+        clearInterval(progressPollingInterval);
+        progressPollingInterval = null;
+    }
+}
+
+// 更新进度显示
+function updateProgressDisplay(progress, message) {
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    
+    progressBar.style.width = progress + '%';
+    progressText.textContent = message;
+    
+    if (progress < 30) {
+        progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-info';
+    } else if (progress < 70) {
+        progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-primary';
+    } else {
+        progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-success';
+    }
+}
+
+// 开始进度轮询
+function startProgressPolling(operationId) {
+    currentOperationId = operationId;
+    showProgress();
+    updateProgressDisplay(0, '准备中...');
+    
+    progressPollingInterval = setInterval(function() {
+        fetch(`/api/operation/progress/${operationId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.progress) {
+                    updateProgressDisplay(data.progress.progress, data.progress.message);
+                    
+                    if (data.progress.completed) {
+                        clearInterval(progressPollingInterval);
+                        progressPollingInterval = null;
+                        
+                        setTimeout(function() {
+                            hideProgress();
+                            if (currentOperationId) {
+                                fetch(`/api/operation/remove/${currentOperationId}`, { method: 'DELETE' });
+                            }
+                        }, 1000);
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('进度查询失败:', error);
+            });
+    }, 500);
+}
+
+// 操作函数
+function mountTape() {
+    if (confirm('是否要挂载新磁带？')) {
+        const button = event.target.closest('button');
+        const originalText = button.innerHTML;
+        button.innerHTML = '<span>⏳</span> 挂载中...';
+        button.disabled = true;
+        
+        fetch('/api/tape/mount', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({})
+        })
+        .then(response => response.json())
+        .then(data => {
+            button.innerHTML = originalText;
+            button.disabled = false;
+            
+            if (data.success) {
+                alert(data.message);
+                loadCurrentTapeStatus();
+            } else {
+                alert('挂载失败：' + data.message);
+            }
+        })
+        .catch(error => {
+            button.innerHTML = originalText;
+            button.disabled = false;
+            alert('挂载失败：' + error.message);
+        });
+    }
+}
+
+function unmountTape() {
+    if (confirm('是否要卸载磁带？')) {
+        const button = event.target.closest('button');
+        const originalText = button.innerHTML;
+        button.innerHTML = '<span>⏳</span> 卸载中...';
+        button.disabled = true;
+        
+        fetch('/api/tape/unmount', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({})
+        })
+        .then(response => response.json())
+        .then(data => {
+            button.innerHTML = originalText;
+            button.disabled = false;
+            
+            if (data.success) {
+                alert(data.message);
+                loadCurrentTapeStatus();
+            } else {
+                alert('卸载失败：' + data.message);
+            }
+        })
+        .catch(error => {
+            button.innerHTML = originalText;
+            button.disabled = false;
+            alert('卸载失败：' + error.message);
+        });
+    }
+}
+
+function ejectTape() {
+    if (confirm('是否要弹出磁带？')) {
+        const button = event.target.closest('button');
+        const originalText = button.innerHTML;
+        button.innerHTML = '<span>⏳</span> 弹出中...';
+        button.disabled = true;
+        
+        fetch('/api/tape/eject', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({})
+        })
+        .then(response => response.json())
+        .then(data => {
+            button.innerHTML = originalText;
+            button.disabled = false;
+            
+            if (data.success) {
+                alert(data.message);
+                loadCurrentTapeStatus();
+                location.reload();
+            } else {
+                alert('弹出失败：' + data.message);
+            }
+        })
+        .catch(error => {
+            button.innerHTML = originalText;
+            button.disabled = false;
+            alert('弹出失败：' + error.message);
+        });
+    }
+}
+</script>
+{% endblock %}

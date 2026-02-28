@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12 d-flex justify-content-between align-items-center">
+        <h2 class="mb-0">🐛 错误监控</h2>
+        <div class="d-flex gap-2">
+            <select class="form-select" id="severityFilter" style="width: auto;" onchange="loadErrors()">
+                <option value="">全部级别</option>
+                <option value="info">信息</option>
+                <option value="warning">警告</option>
+                <option value="error">错误</option>
+                <option value="critical">严重</option>
+            </select>
+            <select class="form-select" id="resolvedFilter" style="width: auto;" onchange="loadErrors()">
+                <option value="">全部状态</option>
+                <option value="false">未解决</option>
+                <option value="true">已解决</option>
+            </select>
+            <button class="btn btn-primary" onclick="loadErrors()">
+                <span>🔄</span> 刷新
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 错误统计 -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-muted">信息</h5>
+                <div class="display-4 text-secondary" id="infoCount">0</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-muted">警告</h5>
+                <div class="display-4 text-warning" id="warningCount">0</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-muted">错误</h5>
+                <div class="display-4 text-danger" id="errorCount">0</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-muted">严重</h5>
+                <div class="display-4 text-dark" id="criticalCount">0</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 错误列表 -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">错误列表</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>时间</th>
+                        <th>级别</th>
+                        <th>错误类型</th>
+                        <th>端点</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="errorsTableBody">
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">
+                            <div class="spinner-border spinner-border-sm" role="status">
+                                <span class="visually-hidden">加载中...</span>
+                            </div>
+                            加载中...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 错误详情模态框 -->
+<div class="modal fade" id="errorDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="errorDetailTitle">错误详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="errorDetailBody">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-success" id="resolveErrorBtn" onclick="resolveError()">
+                    标记为已解决
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentErrorId = null;
+
+function formatTimestamp(isoString) {
+    if (!isoString) return '-';
+    const date = new Date(isoString);
+    return date.toLocaleString('zh-CN');
+}
+
+function getSeverityBadge(severity) {
+    const badgeMap = {
+        'info': 'bg-info',
+        'warning': 'bg-warning',
+        'error': 'bg-danger',
+        'critical': 'bg-dark'
+    };
+    const textMap = {
+        'info': '信息',
+        'warning': '警告',
+        'error': '错误',
+        'critical': '严重'
+    };
+    return `<span class="badge ${badgeMap[severity] || 'bg-secondary'}">${textMap[severity] || severity}</span>`;
+}
+
+function renderErrors(errors) {
+    const tbody = document.getElementById('errorsTableBody');
+    
+    if (errors && errors.length > 0) {
+        tbody.innerHTML = errors.map(error => `
+            <tr>
+                <td>${formatTimestamp(error.created_at)}</td>
+                <td>${getSeverityBadge(error.severity)}</td>
+                <td><code>${error.error_type}</code></td>
+                <td>${error.endpoint || '-'}</td>
+                <td>
+                    <span class="badge ${error.resolved ? 'bg-success' : 'bg-warning'}">
+                        ${error.resolved ? '已解决' : '未解决'}
+                    </span>
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary" onclick="showErrorDetail(${error.id})">
+                        详情
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    } else {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center text-muted py-5">
+                    <p class="mb-4">暂无错误记录</p>
+                </td>
+            </tr>
+        `;
+    }
+}
+
+function renderStats(stats) {
+    document.getElementById('infoCount').textContent = stats.info || 0;
+    document.getElementById('warningCount').textContent = stats.warning || 0;
+    document.getElementById('errorCount').textContent = stats.error || 0;
+    document.getElementById('criticalCount').textContent = stats.critical || 0;
+}
+
+function loadErrors() {
+    const severity = document.getElementById('severityFilter').value;
+    const resolved = document.getElementById('resolvedFilter').value;
+    
+    let url = '/api/errors';
+    const params = new URLSearchParams();
+    if (severity) params.append('severity', severity);
+    if (resolved) params.append('resolved', resolved);
+    
+    if (params.toString()) {
+        url += '?' + params.toString();
+    }
+    
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                renderErrors(data.errors);
+            }
+        })
+        .catch(error => {
+            console.error('加载错误列表失败:', error);
+        });
+    
+    fetch('/api/errors/stats')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                renderStats(data.stats);
+            }
+        })
+        .catch(error => {
+            console.error('加载错误统计失败:', error);
+        });
+}
+
+function showErrorDetail(errorId) {
+    currentErrorId = errorId;
+    
+    fetch(`/api/errors/${errorId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const error = data.error;
+                const modal = new bootstrap.Modal(document.getElementById('errorDetailModal'));
+                const body = document.getElementById('errorDetailBody');
+                const resolveBtn = document.getElementById('resolveErrorBtn');
+                
+                body.innerHTML = `
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <strong>错误类型:</strong> <code>${error.error_type}</code>
+                        </div>
+                        <div class="col-md-6">
+                            <strong>级别:</strong> ${getSeverityBadge(error.severity)}
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <strong>创建时间:</strong> ${formatTimestamp(error.created_at)}
+                        </div>
+                        <div class="col-md-6">
+                            <strong>状态:</strong> 
+                            <span class="badge ${error.resolved ? 'bg-success' : 'bg-warning'}">
+                                ${error.resolved ? '已解决' : '未解决'}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <strong>端点:</strong> ${error.endpoint || '-'}
+                        </div>
+                        <div class="col-md-6">
+                            <strong>IP地址:</strong> ${error.ip_address || '-'}
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <strong>错误信息:</strong>
+                        <p class="text-danger">${error.message}</p>
+                    </div>
+                    <div class="mb-3">
+                        <strong>堆栈跟踪:</strong>
+                        <pre class="bg-light p-3 rounded small">${error.stack_trace || '无'}</pre>
+                    </div>
+                `;
+                
+                resolveBtn.style.display = error.resolved ? 'none' : 'block';
+                modal.show();
+            }
+        })
+        .catch(error => {
+            console.error('加载错误详情失败:', error);
+        });
+}
+
+function resolveError() {
+    if (!currentErrorId) return;
+    
+    fetch(`/api/errors/${currentErrorId}/resolve`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('错误已标记为已解决！');
+                bootstrap.Modal.getInstance(document.getElementById('errorDetailModal')).hide();
+                loadErrors();
+            } else {
+                alert('操作失败：' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('标记错误失败:', error);
+            alert('操作失败：' + error.message);
+        });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadErrors();
+});
+</script>
+{% endblock %}

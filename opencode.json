@@ -1,0 +1,23 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "myprovider": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "volcengine",
+      "options": {
+        "baseURL": "https://ark.cn-beijing.volces.com/api/coding/v3",
+        "apiKey": "9191b636-1dbd-4158-9c72-f8b15ea749f8"
+      },
+      "models": {
+        "ark-code-latest": {
+          "name": "ark-code-latest",
+          "options":{
+              "thinking":{
+                  "type": "enabled"
+              }
+          }
+        }
+      }
+    }
+  }
+}

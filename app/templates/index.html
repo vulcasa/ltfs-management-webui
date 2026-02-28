@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h2 class="mb-3">系统概览</h2>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-3 mb-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">磁带数量</h5>
+                    <span class="text-primary fs-2">{{ tape_count }}</span>
+                </div>
+                <p class="card-text text-muted mt-2">已登记的磁带总数</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">文件数量</h5>
+                    <span class="text-success fs-2">{{ file_count }}</span>
+                </div>
+                <p class="card-text text-muted mt-2">已索引的文件总数</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">已挂载</h5>
+                    <span class="text-warning fs-2">{{ mounted_count }}</span>
+                </div>
+                <p class="card-text text-muted mt-2">当前已挂载的磁带</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">总容量</h5>
+                    <span class="text-info fs-2">{{ total_capacity }}</span>
+                </div>
+                <p class="card-text text-muted mt-2">所有磁带的总容量</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">快速操作</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <a href="/tapes" class="btn btn-primary btn-lg">管理磁带</a>
+                    <a href="/files" class="btn btn-secondary btn-lg">浏览文件</a>
+                    <a href="/backup" class="btn btn-success btn-lg">备份与恢复</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">设备状态</h5>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <span>磁带设备</span>
+                        <span id="tape-device-status" class="status-badge status-unmounted">检查中...</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <span>系统状态</span>
+                        <span class="status-badge status-mounted">正常</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <span>数据库状态</span>
+                        <span class="status-badge status-mounted">已连接</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const tapeDeviceStatus = document.getElementById('tape-device-status');
+    
+    function checkTapeDeviceStatus() {
+        fetch('/api/tape/device-status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.device_exists) {
+                    tapeDeviceStatus.textContent = '正常';
+                    tapeDeviceStatus.className = 'status-badge status-mounted';
+                } else {
+                    tapeDeviceStatus.textContent = '未就绪';
+                    tapeDeviceStatus.className = 'status-badge status-unmounted';
+                }
+            })
+            .catch(error => {
+                console.error('检查设备状态失败:', error);
+                tapeDeviceStatus.textContent = '未就绪';
+                tapeDeviceStatus.className = 'status-badge status-unmounted';
+            });
+    }
+    
+    checkTapeDeviceStatus();
+    
+    setInterval(checkTapeDeviceStatus, 30000);
+});
+</script>
+{% endblock %}

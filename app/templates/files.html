@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12 d-flex justify-content-between align-items-center">
+        <h2 class="mb-0">文件管理</h2>
+        <div class="d-flex gap-2">
+            <button class="btn btn-success text-nowrap" onclick="scanFileSystem()">
+                <span>🔍</span> 扫描文件系统
+            </button>
+            <div class="input-group" style="max-width: 400px;">
+                <input type="text" class="form-control" placeholder="搜索文件..." id="searchInput">
+                <button class="btn btn-primary" type="button" onclick="searchFiles()">搜索</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- 目录树导航 -->
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">目录结构</h5>
+            </div>
+            <div class="card-body" style="max-height: 600px; overflow-y: auto;">
+                <div id="directoryTree">
+                    <!-- 目录树将通过 JavaScript 加载 -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 文件列表 -->
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">文件列表</h5>
+            </div>
+            <div class="card-body">
+                <div id="currentDirectoryPath" class="mb-3 text-muted">当前目录: /</div>
+                {% if files %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>文件名</th>
+                                <th>大小</th>
+                                <th>所在磁带</th>
+                                <th>修改时间</th>
+                                <th>创建时间</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fileList">
+                            {% for file in files %}
+                            <tr>
+                                <td><strong>{{ file.name }}</strong></td>
+                                <td>{{ file.size | filesizeformat if file.size else '-' }}</td>
+                                <td>
+                                    {% if file.tape %}
+                                    <span class="badge bg-primary">{{ file.tape.barcode }}</span>
+                                    {% else %}
+                                    <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ file.mtime.strftime('%Y-%m-%d %H:%M') if file.mtime else '-' }}</td>
+                                <td>{{ file.created_at.strftime('%Y-%m-%d %H:%M') if file.created_at else '-' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <p class="text-muted mb-4">暂无文件数据</p>
+                    <p class="text-muted">请先挂载磁带并扫描文件系统</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 当前选中的目录ID
+let currentDirectoryId = null;
+let allDirectories = [];
+
+// 页面加载时加载目录树
+document.addEventListener('DOMContentLoaded', function() {
+    loadDirectoryTree();
+});
+
+function loadDirectoryTree() {
+    fetch('/api/directories')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            allDirectories = data.directories;
+            const directoryTree = document.getElementById('directoryTree');
+            directoryTree.innerHTML = renderDirectoryTree(data.directories);
+            
+            // 默认不加载任何文件，等用户选择目录
+            document.getElementById('currentDirectoryPath').textContent = '当前目录: 请选择目录';
+        } else {
+            console.error('加载目录树失败:', data.message);
+        }
+    })
+    .catch(error => {
+        console.error('加载目录树失败:', error);
+    });
+}
+
+function renderDirectoryTree(directories, parentId = null, level = 0) {
+    let html = '';
+    
+    // 如果是顶级，按磁带分组显示
+    if (parentId === null && level === 0) {
+        // 先获取所有 parent_id 为 null 的目录（磁带根目录）
+        const tapeRootDirs = directories.filter(dir => dir.parent_id === null);
+        
+        if (tapeRootDirs.length === 0) {
+            return '';
+        }
+        
+        tapeRootDirs.forEach(tapeRoot => {
+            const hasChildren = directories.some(d => d.parent_id === tapeRoot.id);
+            
+            html += `
+                <div style="margin-bottom: 5px;">
+                    <span id="dir-label-${tapeRoot.id}" onclick="toggleDirectory(${tapeRoot.id})" style="cursor: pointer;">
+                        ${hasChildren ? '[+]' : '   '} 📼 ${tapeRoot.name}
+                    </span>
+                    <div id="subdir-${tapeRoot.id}" class="subdirectory hidden">
+                        ${renderDirectoryTree(directories, tapeRoot.id, level + 1)}
+                    </div>
+                </div>
+            `;
+        });
+        
+        return html;
+    }
+    
+    const filteredDirs = directories.filter(dir => dir.parent_id === parentId);
+    
+    filteredDirs.forEach(dir => {
+        const hasChildren = directories.some(d => d.parent_id === dir.id);
+        const paddingLeft = level * 20;
+        
+        html += `
+            <div style="padding-left: ${paddingLeft}px; margin-bottom: 5px;">
+                <span id="dir-label-${dir.id}" onclick="toggleDirectory(${dir.id})" style="cursor: pointer;">
+                    ${hasChildren ? '[+]' : '   '} ${hasChildren ? '📂' : '📁'} ${dir.name}
+                </span>
+                <div id="subdir-${dir.id}" class="subdirectory hidden">
+                    ${renderDirectoryTree(directories, dir.id, level + 1)}
+                </div>
+            </div>
+        `;
+    });
+    
+    return html;
+}
+
+function toggleDirectory(dirId) {
+    const subdirElement = document.getElementById(`subdir-${dirId}`);
+    const dirLabel = document.getElementById(`dir-label-${dirId}`);
+    
+    if (subdirElement) {
+        const isHidden = subdirElement.classList.toggle('hidden');
+        
+        // 更新加减号
+        if (dirLabel) {
+            const currentText = dirLabel.textContent;
+            if (isHidden) {
+                // 收起，显示 [+]
+                dirLabel.textContent = currentText.replace('[-]', '[+]');
+            } else {
+                // 展开，显示 [-]
+                dirLabel.textContent = currentText.replace('[+]', '[-]');
+            }
+        }
+    }
+    
+    // 加载该目录下的文件
+    loadFilesInDirectory(dirId);
+}
+
+function loadFilesInDirectory(dirId) {
+    currentDirectoryId = dirId;
+    
+    // 更新当前目录显示
+    const dir = allDirectories.find(d => d.id === dirId);
+    const currentDirPath = document.getElementById('currentDirectoryPath');
+    if (dir) {
+        const displayPath = dir.path && dir.path !== '' ? '/' + dir.path : '/';
+        currentDirPath.textContent = '当前目录: ' + displayPath;
+    } else {
+        currentDirPath.textContent = '当前目录: /';
+    }
+    
+    fetch(`/api/files?directory_id=${dirId}`)
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            renderFileList(data.files);
+        } else {
+            console.error('加载文件列表失败:', data.message);
+        }
+    })
+    .catch(error => {
+        console.error('加载文件列表失败:', error);
+    });
+}
+
+function loadRootFiles() {
+    // 加载根目录的所有文件
+    currentDirectoryId = null;
+    document.getElementById('currentDirectoryPath').textContent = '当前目录: /';
+    
+    fetch('/api/files')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            renderFileList(data.files);
+        } else {
+            console.error('加载文件列表失败:', data.message);
+        }
+    })
+    .catch(error => {
+        console.error('加载文件列表失败:', error);
+    });
+}
+
+function renderFileList(files) {
+    const fileList = document.getElementById('fileList');
+    fileList.innerHTML = '';
+    
+    if (files.length === 0) {
+        fileList.innerHTML = '<tr><td colspan="5" class="text-center text-muted">该目录下没有文件</td></tr>';
+        return;
+    }
+    
+    files.forEach(file => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><strong>${file.name}</strong></td>
+            <td>${formatBytes(file.size)}</td>
+            <td>${file.tape_barcode ? `<span class="badge bg-primary">${file.tape_barcode}</span>` : '<span class="text-muted">-</span>'}</td>
+            <td>${file.mtime ? new Date(file.mtime).toLocaleString() : '-'}</td>
+            <td>${file.ctime ? new Date(file.ctime).toLocaleString() : '-'}</td>
+        `;
+        fileList.appendChild(tr);
+    });
+}
+
+function scanFileSystem() {
+    if (confirm('是否要扫描当前挂载的磁带文件系统？')) {
+        const button = event.target.closest('button');
+        const originalText = button.innerHTML;
+        button.innerHTML = '<span>⏳</span> 扫描中...';
+        button.disabled = true;
+        
+        fetch('/api/tape/filesystem', {
+            method: 'GET'
+        })
+        .then(response => response.json())
+        .then(data => {
+            button.innerHTML = originalText;
+            button.disabled = false;
+            
+            if (data.success) {
+                alert(`扫描完成！\n目录: ${data.dir_count}个\n文件: ${data.file_count}个\n总大小: ${formatBytes(data.total_size)}`);
+                location.reload();
+            } else {
+                alert('扫描失败：' + data.message);
+            }
+        })
+        .catch(error => {
+            button.innerHTML = originalText;
+            button.disabled = false;
+            alert('扫描失败：' + error.message);
+        });
+    }
+}
+
+function searchFiles() {
+    const searchTerm = document.getElementById('searchInput').value;
+    if (searchTerm.trim()) {
+        window.location.href = `/files?search=${encodeURIComponent(searchTerm)}`;
+    }
+}
+
+function formatBytes(bytes, decimals = 2) {
+    if (!+bytes) return '0 Bytes';
+    
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+    
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+}
+
+document.getElementById('searchInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        searchFiles();
+    }
+});
+</script>
+
+<style>
+.hidden {
+    display: none !important;
+}
+
+.subdirectory {
+    margin-top: 5px;
+    margin-bottom: 5px;
+}
+</style>
+{% endblock %}

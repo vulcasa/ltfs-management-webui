@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12 d-flex justify-content-between align-items-center">
+        <h2 class="mb-0">操作日志</h2>
+        <div class="d-flex gap-2">
+            <span class="badge bg-success" id="refreshStatus">
+                <span id="refreshIcon">▶️</span> 自动刷新中
+            </span>
+            <button class="btn btn-secondary" id="toggleRefreshBtn" onclick="toggleAutoRefresh()">
+                <span>⏸️</span> 暂停刷新
+            </button>
+            <button class="btn btn-primary" onclick="loadLogs()">
+                <span>🔄</span> 手动刷新
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-info d-none" id="newLogAlert" role="alert">
+    <strong>📢</strong> 有新的操作日志！点击手动刷新查看。
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">最近操作（上限1000条）</h5>
+        <span class="badge bg-info" id="logCount">0 条</span>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>时间</th>
+                        <th>操作类型</th>
+                        <th>磁带</th>
+                        <th>状态</th>
+                        <th>消息</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="logsTableBody">
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">
+                            <div class="spinner-border spinner-border-sm" role="status">
+                                <span class="visually-hidden">加载中...</span>
+                            </div>
+                            加载中...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let autoRefreshEnabled = true;
+let refreshInterval = null;
+let lastLogCount = 0;
+let latestLogId = 0;
+
+function formatTimestamp(isoString) {
+    if (!isoString) return '-';
+    const date = new Date(isoString);
+    return date.toLocaleString('zh-CN');
+}
+
+function getStatusBadgeClass(status) {
+    if (status === 'success') return 'status-mounted';
+    if (status === 'error') return 'status-ejected';
+    return 'status-unmounted';
+}
+
+function getStatusText(status) {
+    if (status === 'success') return '成功';
+    if (status === 'error') return '失败';
+    return status;
+}
+
+function renderLogs(operations) {
+    const tbody = document.getElementById('logsTableBody');
+    const countBadge = document.getElementById('logCount');
+    
+    if (operations && operations.length > 0) {
+        tbody.innerHTML = operations.map(op => `
+            <tr class="${op.id > latestLogId && latestLogId > 0 ? 'table-info' : ''}">
+                <td>${formatTimestamp(op.timestamp)}</td>
+                <td><span class="badge bg-secondary">${op.operation_type}</span></td>
+                <td>
+                    ${op.tape_barcode ? `<span class="badge bg-primary">${op.tape_barcode}</span>` : '<span class="text-muted">-</span>'}
+                </td>
+                <td>
+                    <span class="status-badge ${getStatusBadgeClass(op.status)}">
+                        ${getStatusText(op.status)}
+                    </span>
+                </td>
+                <td>${op.message || '-'}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="toggleLogDetails(${op.id})">
+                        详情
+                    </button>
+                </td>
+            </tr>
+            <tr id="logDetails_${op.id}" class="d-none">
+                <td colspan="6">
+                    <div class="card card-body bg-light">
+                        ${op.command ? `
+                        <div class="mb-3">
+                            <strong>执行命令:</strong>
+                            <pre class="mb-0">${op.command}</pre>
+                        </div>
+                        ` : ''}
+                        ${op.stdout ? `
+                        <div class="mb-3">
+                            <strong>标准输出:</strong>
+                            <pre class="mb-0">${op.stdout}</pre>
+                        </div>
+                        ` : ''}
+                        ${op.stderr ? `
+                        <div class="mb-3">
+                            <strong>标准错误:</strong>
+                            <pre class="mb-0 text-danger">${op.stderr}</pre>
+                        </div>
+                        ` : ''}
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+        
+        countBadge.textContent = `${operations.length} 条`;
+        
+        if (latestLogId > 0 && operations[0].id > latestLogId) {
+            showNewLogAlert();
+        }
+        
+        if (operations.length > 0) {
+            latestLogId = operations[0].id;
+        }
+    } else {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center text-muted py-5">
+                    <p class="mb-4">暂无操作日志</p>
+                    <p>执行磁带操作后会在此显示日志</p>
+                </td>
+            </tr>
+        `;
+        countBadge.textContent = '0 条';
+    }
+}
+
+function toggleLogDetails(opId) {
+    const detailsRow = document.getElementById(`logDetails_${opId}`);
+    if (detailsRow) {
+        detailsRow.classList.toggle('d-none');
+    }
+}
+
+function showNewLogAlert() {
+    const alert = document.getElementById('newLogAlert');
+    alert.classList.remove('d-none');
+    
+    setTimeout(() => {
+        alert.classList.add('d-none');
+    }, 5000);
+}
+
+function loadLogs() {
+    fetch('/api/logs')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const currentCount = data.operations.length;
+                const hasNewLogs = currentCount > lastLogCount;
+                
+                renderLogs(data.operations);
+                
+                lastLogCount = currentCount;
+            }
+        })
+        .catch(error => {
+            console.error('加载日志失败:', error);
+        });
+}
+
+function toggleAutoRefresh() {
+    autoRefreshEnabled = !autoRefreshEnabled;
+    const btn = document.getElementById('toggleRefreshBtn');
+    const status = document.getElementById('refreshStatus');
+    const icon = document.getElementById('refreshIcon');
+    
+    if (autoRefreshEnabled) {
+        btn.innerHTML = '<span>⏸️</span> 暂停刷新';
+        status.className = 'badge bg-success';
+        icon.textContent = '▶️';
+        status.innerHTML = '<span id="refreshIcon">▶️</span> 自动刷新中';
+        startAutoRefresh();
+    } else {
+        btn.innerHTML = '<span>▶️</span> 继续刷新';
+        status.className = 'badge bg-secondary';
+        icon.textContent = '⏸️';
+        status.innerHTML = '<span id="refreshIcon">⏸️</span> 已暂停';
+        stopAutoRefresh();
+    }
+}
+
+function startAutoRefresh() {
+    if (refreshInterval) clearInterval(refreshInterval);
+    refreshInterval = setInterval(loadLogs, 30000);
+}
+
+function stopAutoRefresh() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadLogs();
+    startAutoRefresh();
+});
+</script>
+{% endblock %}

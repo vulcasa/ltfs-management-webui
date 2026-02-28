@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  ltfs-management-webui:
+    build: .
+    image: ltfs-management-webui:1.0.0-beta
+    platform: linux/amd64
+    container_name: ltfs-management-webui
+    ports:
+      - "5001:5001"
+    environment:
+      - FLASK_ENV=production
+      - LTFS_DEVICE_PATH=/dev/sg10
+      - LTFS_MOUNT_POINT=/media/tape
+    volumes:
+      - ./instance:/app/instance
+      - tape-media:/media/tape
+    devices:
+      - /dev/sg10:/dev/sg10
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  tape-media:
+    driver: local
