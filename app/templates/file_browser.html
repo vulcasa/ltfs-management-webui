@@ -78,26 +78,40 @@
           </button>
         </div>
         <div class="card-body">
-          <nav aria-label="breadcrumb" class="mb-3">
-            <ol class="breadcrumb" id="rightBreadcrumb">
-              <li class="breadcrumb-item"><a href="#" data-path="/media/tape">/media/tape</a></li>
-            </ol>
-          </nav>
-          <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
-            <table class="table table-hover table-sm" id="rightFileTable">
-              <thead>
-                <tr>
-                  <th style="width: 40px;">
-                    <input type="checkbox" id="rightSelectAll">
-                  </th>
-                  <th>名称</th>
-                  <th style="width: 100px;">大小</th>
-                </tr>
-              </thead>
-              <tbody id="rightFileTableBody">
-                <!-- 文件列表将通过 JS 填充 -->
-              </tbody>
-            </table>
+          <!-- 磁带未挂载提示 -->
+          <div id="tapeNotMountedAlert" class="alert alert-warning d-none" role="alert">
+            <div class="d-flex align-items-center">
+              <span style="font-size: 24px; margin-right: 12px;">⚠️</span>
+              <div>
+                <strong>磁带未挂载</strong>
+                <p class="mb-0">请先挂载磁带后再访问磁带文件</p>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 正常文件浏览器（磁带已挂载时显示） -->
+          <div id="rightFileBrowserContent">
+            <nav aria-label="breadcrumb" class="mb-3">
+              <ol class="breadcrumb" id="rightBreadcrumb">
+                <li class="breadcrumb-item"><a href="#" data-path="/media/tape">/media/tape</a></li>
+              </ol>
+            </nav>
+            <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+              <table class="table table-hover table-sm" id="rightFileTable">
+                <thead>
+                  <tr>
+                    <th style="width: 40px;">
+                      <input type="checkbox" id="rightSelectAll">
+                    </th>
+                    <th>名称</th>
+                    <th style="width: 100px;">大小</th>
+                  </tr>
+                </thead>
+                <tbody id="rightFileTableBody">
+                  <!-- 文件列表将通过 JS 填充 -->
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>

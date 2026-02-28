@@ -1180,6 +1180,40 @@ def file_browser():
     """文件浏览器页面"""
     return render_template('file_browser.html')
 
+@app.route('/api/tape/mounted', methods=['GET'])
+def api_check_tape_mounted():
+    """检查磁带是否已挂载"""
+    try:
+        # 检查 /media/tape 目录是否存在且有内容
+        tape_mount_point = '/media/tape'
+        is_mounted = os.path.exists(tape_mount_point)
+        
+        # 进一步检查是否真的挂载了（查看是否有内容或特定文件）
+        if is_mounted:
+            try:
+                # 尝试列出目录内容
+                items = os.listdir(tape_mount_point)
+                # 如果目录存在但是空的，可能未挂载（取决于LTFS的行为）
+                # 这里我们假设只要目录存在就是已挂载状态
+                is_mounted = True
+            except:
+                is_mounted = False
+        
+        # 同时检查数据库中的磁带状态
+        db_mounted = Tape.query.filter_by(status='mounted').first() is not None
+        
+        return jsonify({
+            'success': True,
+            'mounted': is_mounted or db_mounted,
+            'mount_point': tape_mount_point
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e),
+            'mounted': False
+        }), 500
+
 @app.route('/api/browser/list', methods=['GET'])
 def api_browser_list():
     """列出目录内容"""
@@ -1189,6 +1223,16 @@ def api_browser_list():
         # 安全检查：确保路径在 /mnt 或 /media/tape 下
         if not (path.startswith('/mnt') or path.startswith('/media/tape')):
             path = '/mnt'
+        
+        # 如果是磁带路径，检查是否挂载
+        if path.startswith('/media/tape'):
+            tape_mount_point = '/media/tape'
+            if not os.path.exists(tape_mount_point):
+                return jsonify({
+                    'success': False,
+                    'message': '磁带未挂载',
+                    'tape_not_mounted': True
+                }), 400
         
         if not os.path.exists(path):
             return jsonify({

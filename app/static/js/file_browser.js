@@ -28,6 +28,17 @@ class FileBrowser {
     });
   }
 
+  async checkTapeMounted() {
+    try {
+      const response = await fetch('/api/tape/mounted');
+      const data = await response.json();
+      return data.success ? data.mounted : false;
+    } catch (error) {
+      console.error('检查磁带挂载状态失败:', error);
+      return false;
+    }
+  }
+
   async loadDirectory(side, path) {
     try {
       const response = await fetch(`/api/browser/list?path=${encodeURIComponent(path)}`);
@@ -42,12 +53,35 @@ class FileBrowser {
           this.rightPath = data.path;
           this.renderFileList('right', data.items);
           this.renderBreadcrumb('right', data.path);
+          this.showTapeMounted(true);
         }
       } else {
-        alert('加载目录失败: ' + data.message);
+        if (side === 'right' && data.tape_not_mounted) {
+          this.showTapeMounted(false);
+        } else {
+          alert('加载目录失败: ' + data.message);
+        }
       }
     } catch (error) {
       console.error('加载目录失败:', error);
+      if (side === 'right') {
+        this.showTapeMounted(false);
+      }
+    }
+  }
+
+  showTapeMounted(isMounted) {
+    const alert = document.getElementById('tapeNotMountedAlert');
+    const content = document.getElementById('rightFileBrowserContent');
+    
+    if (isMounted) {
+      alert.classList.add('d-none');
+      content.classList.remove('d-none');
+    } else {
+      alert.classList.remove('d-none');
+      content.classList.add('d-none');
+      this.rightSelectedItems.clear();
+      this.updateSelectionUI('right');
     }
   }
 
@@ -203,6 +237,12 @@ class FileBrowser {
       return;
     }
     
+    const isMounted = await this.checkTapeMounted();
+    if (!isMounted) {
+      alert('磁带未挂载，请挂载后重试');
+      return;
+    }
+    
     const sourcePaths = Array.from(this.leftSelectedItems);
     const targetPath = this.rightPath;
     const transferType = document.getElementById('transferType').value;
@@ -240,6 +280,12 @@ class FileBrowser {
   async transferToLeft() {
     if (this.rightSelectedItems.size === 0) {
       alert('请先选择要传输的文件');
+      return;
+    }
+    
+    const isMounted = await this.checkTapeMounted();
+    if (!isMounted) {
+      alert('磁带未挂载，请挂载后重试');
       return;
     }
     
