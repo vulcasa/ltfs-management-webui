@@ -49,6 +49,7 @@
                                 <th>所在磁带</th>
                                 <th>修改时间</th>
                                 <th>创建时间</th>
+                                <th>文件路径</th>
                             </tr>
                         </thead>
                         <tbody id="fileList">
@@ -65,6 +66,13 @@
                                 </td>
                                 <td>{{ file.mtime.strftime('%Y-%m-%d %H:%M') if file.mtime else '-' }}</td>
                                 <td>{{ file.created_at.strftime('%Y-%m-%d %H:%M') if file.created_at else '-' }}</td>
+                                <td>
+                                    {% if file.directory and file.directory.path %}
+                                    /{{ file.directory.path }}/{{ file.name }}
+                                    {% else %}
+                                    /{{ file.name }}
+                                    {% endif %}
+                                </td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -116,25 +124,25 @@ function loadDirectoryTree() {
 function renderDirectoryTree(directories, parentId = null, level = 0) {
     let html = '';
     
-    // 如果是顶级，按磁带分组显示
+    // 顶级，显示统合的目录结构
     if (parentId === null && level === 0) {
-        // 先获取所有 parent_id 为 null 的目录（磁带根目录）
-        const tapeRootDirs = directories.filter(dir => dir.parent_id === null);
+        // 获取所有 parent_id 为 null 的目录（统合后的根目录）
+        const rootDirs = directories.filter(dir => dir.parent_id === null);
         
-        if (tapeRootDirs.length === 0) {
+        if (rootDirs.length === 0) {
             return '';
         }
         
-        tapeRootDirs.forEach(tapeRoot => {
-            const hasChildren = directories.some(d => d.parent_id === tapeRoot.id);
+        rootDirs.forEach(rootDir => {
+            const hasChildren = directories.some(d => d.parent_id === rootDir.id);
             
             html += `
                 <div style="margin-bottom: 5px;">
-                    <span id="dir-label-${tapeRoot.id}" onclick="toggleDirectory(${tapeRoot.id})" style="cursor: pointer;">
-                        ${hasChildren ? '[+]' : '   '} 📼 ${tapeRoot.name}
+                    <span id="dir-label-${rootDir.id}" onclick="toggleDirectory(${rootDir.id})" style="cursor: pointer;">
+                        ${hasChildren ? '[+]' : '   '} ${hasChildren ? '📂' : '📁'} ${rootDir.name !== '根目录' ? rootDir.name : '/'}
                     </span>
-                    <div id="subdir-${tapeRoot.id}" class="subdirectory hidden">
-                        ${renderDirectoryTree(directories, tapeRoot.id, level + 1)}
+                    <div id="subdir-${rootDir.id}" class="subdirectory hidden">
+                        ${renderDirectoryTree(directories, rootDir.id, level + 1)}
                     </div>
                 </div>
             `;
@@ -239,21 +247,22 @@ function renderFileList(files) {
     fileList.innerHTML = '';
     
     if (files.length === 0) {
-        fileList.innerHTML = '<tr><td colspan="5" class="text-center text-muted">该目录下没有文件</td></tr>';
+        fileList.innerHTML = '<tr><td colspan="6" class="text-center text-muted">该目录下没有文件</td></tr>';
         return;
     }
     
-    files.forEach(file => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td><strong>${file.name}</strong></td>
-            <td>${formatBytes(file.size)}</td>
-            <td>${file.tape_barcode ? `<span class="badge bg-primary">${file.tape_barcode}</span>` : '<span class="text-muted">-</span>'}</td>
-            <td>${file.mtime ? new Date(file.mtime).toLocaleString() : '-'}</td>
-            <td>${file.ctime ? new Date(file.ctime).toLocaleString() : '-'}</td>
-        `;
-        fileList.appendChild(tr);
-    });
+        files.forEach(file => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><strong>${file.name}</strong></td>
+                <td>${formatBytes(file.size)}</td>
+                <td>${file.tape_barcode ? `<span class="badge bg-primary">📼 ${file.tape_barcode}</span>` : '<span class="text-muted">-</span>'}</td>
+                <td>${file.mtime ? new Date(file.mtime).toLocaleString() : '-'}</td>
+                <td>${file.ctime ? new Date(file.ctime).toLocaleString() : '-'}</td>
+                <td>${file.file_path || '-'}</td>
+            `;
+            fileList.appendChild(tr);
+        });
 }
 
 function scanFileSystem() {

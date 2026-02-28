@@ -364,45 +364,42 @@ def api_scan_filesystem():
                 Directory.query.filter_by(tape_id=tape.id).delete()
                 File.query.filter_by(tape_id=tape.id).delete()
                 
-                # 先创建根目录记录（以磁带barcode命名）
-                tape_root_directory = Directory(
-                    tape_id=tape.id,
-                    name=tape.barcode,
-                    path=''
-                )
-                tape_root_directory.parent_id = None
-                db.session.add(tape_root_directory)
-                db.session.flush()  # 获取tape_root_directory.id
-                
-                # 保存其他目录信息（先保存到字典，便于查找父目录）
+                # 创建所有目录，并查找或创建对应的父目录（统合目录结构）
                 dir_map = {}
-                dir_map[''] = tape_root_directory.id
                 
+                # 先处理所有目录，建立映射关系
                 for dir_info in result['directories']:
-                    directory = Directory(
-                        tape_id=tape.id,
-                        name=dir_info['name'],
-                        path=dir_info['path']
-                    )
-                    db.session.add(directory)
-                    db.session.flush()
-                    dir_map[dir_info['path']] = directory.id
-                
-                # 现在计算并更新父子关系
-                for dir_info in result['directories']:
-                    dir_path = dir_info['path']
-                    parent_path = os.path.dirname(dir_path)
+                    # 检查是否已存在相同路径的目录（来自其他磁带）
+                    existing_dir = Directory.query.filter_by(path=dir_info['path']).first()
                     
-                    directory = Directory.query.filter_by(
-                        tape_id=tape.id,
-                        path=dir_path
-                    ).first()
-                    
-                    if directory:
-                        if parent_path in dir_map:
-                            directory.parent_id = dir_map[parent_path]
+                    if existing_dir:
+                        # 目录已存在，复用
+                        dir_map[dir_info['path']] = existing_dir.id
+                    else:
+                        # 目录不存在，创建新的
+                        directory = Directory(
+                            tape_id=tape.id,
+                            name=dir_info['name'],
+                            path=dir_info['path']
+                        )
+                        
+                        # 查找父目录
+                        parent_path = os.path.dirname(dir_info['path'])
+                        if parent_path == '':
+                            # 根目录
+                            directory.parent_id = None
                         else:
-                            directory.parent_id = tape_root_directory.id
+                            # 查找父目录
+                            parent_dir = Directory.query.filter_by(path=parent_path).first()
+                            if parent_dir:
+                                directory.parent_id = parent_dir.id
+                            else:
+                                # 如果父目录不存在，设为根目录
+                                directory.parent_id = None
+                        
+                        db.session.add(directory)
+                        db.session.flush()
+                        dir_map[dir_info['path']] = directory.id
                 
                 db.session.commit()
                 
@@ -411,15 +408,28 @@ def api_scan_filesystem():
                     # 获取目录ID
                     dir_path = os.path.dirname(file_info['path'])
                     if dir_path == '':
-                        # 根目录文件，使用tape_root_directory
-                        directory_id = tape_root_directory.id
+                        # 根目录文件
+                        # 查找或创建根目录
+                        root_dir = Directory.query.filter_by(path='').first()
+                        if not root_dir:
+                            root_dir = Directory(
+                                tape_id=tape.id,
+                                name='根目录',
+                                path=''
+                            )
+                            root_dir.parent_id = None
+                            db.session.add(root_dir)
+                            db.session.flush()
+                        directory_id = root_dir.id
                     else:
                         # 其他目录，查找对应的Directory
-                        parent_dir = Directory.query.filter_by(
-                            tape_id=tape.id,
-                            path=dir_path
-                        ).first()
-                        directory_id = parent_dir.id if parent_dir else tape_root_directory.id
+                        parent_dir = Directory.query.filter_by(path=dir_path).first()
+                        directory_id = parent_dir.id if parent_dir else None
+                        
+                        if not directory_id:
+                            # 如果目录不存在，使用根目录
+                            root_dir = Directory.query.filter_by(path='').first()
+                            directory_id = root_dir.id if root_dir else None
                     
                     file_obj = File(
                         tape_id=tape.id,
@@ -550,6 +560,13 @@ def api_get_files():
         
         result = []
         for file in files:
+            # 获取文件路径
+            file_path = '/'
+            if file.directory:
+                if file.directory.path:
+                    file_path = '/' + file.directory.path
+            file_path = file_path + '/' + file.name
+            
             result.append({
                 'id': file.id,
                 'name': file.name,
@@ -559,7 +576,8 @@ def api_get_files():
                 'ctime': file.ctime.isoformat() if file.ctime else None,
                 'tape_id': file.tape_id,
                 'directory_id': file.directory_id,
-                'tape_barcode': Tape.query.get(file.tape_id).barcode if file.tape_id else None
+                'tape_barcode': Tape.query.get(file.tape_id).barcode if file.tape_id else None,
+                'file_path': file_path
             })
         
         return jsonify({
