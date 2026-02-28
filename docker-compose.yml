@@ -3,9 +3,10 @@ version: '3.8'
 services:
   ltfs-management-webui:
     build: .
-    image: ltfs-management-webui:1.0.0-beta
+    image: ltfs-management-webui:1.0.2
     platform: linux/amd64
     container_name: ltfs-management-webui
+    privileged: true
     ports:
       - "5001:5001"
     environment:
@@ -14,6 +15,7 @@ services:
       - LTFS_MOUNT_POINT=/media/tape
     volumes:
       - ./instance:/app/instance
+      - /mnt:/mnt
       - tape-media:/media/tape
     devices:
       - /dev/sg10:/dev/sg10

@@ -3,12 +3,13 @@ import os
 import uuid
 import pytz
 from app import app, db
-from app.models import Tape, File, Directory, Operation, SystemError
+from app.models import Tape, File, Directory, Operation, SystemError, FileTransfer
 from config import Config
 from datetime import datetime
 from app.utils.command_executor import progress_tracker
 from app.utils.error_monitor import error_monitor
 from app.utils.ltfs_tool import LTFSTool as LTFSProvider
+from app.utils.file_transfer import transfer_manager
 
 # 上海时区
 SHANGHAI_TZ = pytz.timezone('Asia/Shanghai')
@@ -1165,6 +1166,186 @@ def api_get_logs():
             'count': len(operations),
             'latest_id': operations[0].id if operations else 0
         })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+# --- 文件浏览器路由 ---
+
+@app.route('/file-browser')
+def file_browser():
+    """文件浏览器页面"""
+    return render_template('file_browser.html')
+
+@app.route('/api/browser/list', methods=['GET'])
+def api_browser_list():
+    """列出目录内容"""
+    try:
+        path = request.args.get('path', '/mnt')
+        
+        # 安全检查：确保路径在 /mnt 或 /media/tape 下
+        if not (path.startswith('/mnt') or path.startswith('/media/tape')):
+            path = '/mnt'
+        
+        if not os.path.exists(path):
+            return jsonify({
+                'success': False,
+                'message': '路径不存在'
+            }), 404
+        
+        items = []
+        
+        # 添加上级目录（如果不是根）
+        if path != '/mnt' and path != '/media/tape':
+            parent_path = os.path.dirname(path)
+            items.append({
+                'name': '..',
+                'path': parent_path,
+                'type': 'directory',
+                'is_parent': True
+            })
+        
+        # 遍历目录内容
+        for item_name in os.listdir(path):
+            item_path = os.path.join(path, item_name)
+            stat_info = os.stat(item_path)
+            
+            item = {
+                'name': item_name,
+                'path': item_path,
+                'type': 'directory' if os.path.isdir(item_path) else 'file',
+                'size': stat_info.st_size,
+                'modified_at': datetime.fromtimestamp(stat_info.st_mtime).isoformat(),
+                'is_parent': False
+            }
+            items.append(item)
+        
+        # 排序：目录在前，文件在后，按名称排序
+        items.sort(key=lambda x: (x['type'] != 'directory', x['name'].lower()))
+        
+        return jsonify({
+            'success': True,
+            'path': path,
+            'items': items
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+@app.route('/api/transfer/start', methods=['POST'])
+def api_start_transfer():
+    """启动文件传输"""
+    try:
+        data = request.get_json()
+        source_paths = data.get('source_paths', [])
+        target_path = data.get('target_path', '/media/tape')
+        transfer_type = data.get('transfer_type', 'copy')
+        transfer_direction = data.get('transfer_direction', 'container_to_tape')
+        
+        if not source_paths:
+            return jsonify({
+                'success': False,
+                'message': '请选择要传输的文件'
+            }), 400
+        
+        operation_id = transfer_manager.start_transfer(
+            source_paths, 
+            target_path, 
+            transfer_type,
+            transfer_direction
+        )
+        
+        return jsonify({
+            'success': True,
+            'operation_id': operation_id,
+            'message': '传输任务已启动'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+@app.route('/api/transfer/status/<operation_id>', methods=['GET'])
+def api_transfer_status(operation_id):
+    """获取传输状态"""
+    try:
+        status = transfer_manager.get_transfer_status(operation_id)
+        if status:
+            return jsonify({
+                'success': True,
+                'status': status
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': '传输任务不存在'
+            }), 404
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+@app.route('/api/transfer/cancel/<operation_id>', methods=['POST'])
+def api_cancel_transfer(operation_id):
+    """取消传输"""
+    try:
+        success = transfer_manager.cancel_transfer(operation_id)
+        if success:
+            return jsonify({
+                'success': True,
+                'message': '传输已取消'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': '无法取消该传输'
+            }), 400
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+@app.route('/api/transfer/list', methods=['GET'])
+def api_list_transfers():
+    """获取传输任务列表"""
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        transfers = FileTransfer.query.order_by(
+            FileTransfer.created_at.desc()
+        ).limit(limit).all()
+        
+        return jsonify({
+            'success': True,
+            'transfers': [{
+                'id': t.id,
+                'operation_id': t.operation_id,
+                'source_path': t.source_path,
+                'target_path': t.target_path,
+                'transfer_type': t.transfer_type,
+                'transfer_direction': t.transfer_direction,
+                'status': t.status,
+                'progress': t.progress,
+                'total_size': t.total_size,
+                'transferred_size': t.transferred_size,
+                'file_count': t.file_count,
+                'average_speed': t.average_speed,
+                'error_message': t.error_message,
+                'created_at': t.created_at.isoformat() if t.created_at else None
+            } for t in transfers]
+        })
+        
     except Exception as e:
         return jsonify({
             'success': False,
