@@ -368,8 +368,25 @@ def api_scan_filesystem():
                 # 创建所有目录，并查找或创建对应的父目录（统合目录结构）
                 dir_map = {}
                 
-                # 先处理所有目录，建立映射关系
-                for dir_info in result['directories']:
+                # 1. 首先确保存在统一的根目录
+                root_dir = Directory.query.filter_by(path='').first()
+                if not root_dir:
+                    root_dir = Directory(
+                        tape_id=tape.id,
+                        name='根目录',
+                        path=''
+                    )
+                    root_dir.parent_id = None
+                    db.session.add(root_dir)
+                    db.session.flush()
+                dir_map[''] = root_dir.id
+                
+                # 2. 按路径层级排序：先创建父目录，再创建子目录
+                sorted_directories = sorted(result['directories'], 
+                                           key=lambda x: x['path'].count('/'))
+                
+                # 3. 先处理所有目录，建立映射关系
+                for dir_info in sorted_directories:
                     # 检查是否已存在相同路径的目录（来自其他磁带）
                     existing_dir = Directory.query.filter_by(path=dir_info['path']).first()
                     
@@ -387,16 +404,16 @@ def api_scan_filesystem():
                         # 查找父目录
                         parent_path = os.path.dirname(dir_info['path'])
                         if parent_path == '':
-                            # 根目录
-                            directory.parent_id = None
+                            # 根目录的子目录
+                            directory.parent_id = root_dir.id
                         else:
                             # 查找父目录
                             parent_dir = Directory.query.filter_by(path=parent_path).first()
                             if parent_dir:
                                 directory.parent_id = parent_dir.id
                             else:
-                                # 如果父目录不存在，设为根目录
-                                directory.parent_id = None
+                                # 如果父目录不存在，挂到统一根目录下
+                                directory.parent_id = root_dir.id
                         
                         db.session.add(directory)
                         db.session.flush()
@@ -409,28 +426,15 @@ def api_scan_filesystem():
                     # 获取目录ID
                     dir_path = os.path.dirname(file_info['path'])
                     if dir_path == '':
-                        # 根目录文件
-                        # 查找或创建根目录
-                        root_dir = Directory.query.filter_by(path='').first()
-                        if not root_dir:
-                            root_dir = Directory(
-                                tape_id=tape.id,
-                                name='根目录',
-                                path=''
-                            )
-                            root_dir.parent_id = None
-                            db.session.add(root_dir)
-                            db.session.flush()
-                        directory_id = root_dir.id
+                        # 根目录文件 - 使用已经创建的统一根目录
+                        directory_id = dir_map['']
                     else:
                         # 其他目录，查找对应的Directory
-                        parent_dir = Directory.query.filter_by(path=dir_path).first()
-                        directory_id = parent_dir.id if parent_dir else None
-                        
-                        if not directory_id:
-                            # 如果目录不存在，使用根目录
-                            root_dir = Directory.query.filter_by(path='').first()
-                            directory_id = root_dir.id if root_dir else None
+                        if dir_path in dir_map:
+                            directory_id = dir_map[dir_path]
+                        else:
+                            # 如果目录不存在，使用统一根目录
+                            directory_id = dir_map['']
                     
                     file_obj = File(
                         tape_id=tape.id,

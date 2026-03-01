@@ -90,37 +90,54 @@ class FileBrowser {
     const breadcrumb = document.getElementById(breadcrumbId);
     breadcrumb.innerHTML = '';
     
+    const basePath = side === 'left' ? '/mnt' : '/media/tape';
     const parts = path.split('/').filter(p => p);
+    const baseParts = basePath.split('/').filter(p => p);
+    
     let currentPath = '';
+    let startIndex = 0;
     
-    // 根目录
-    const liRoot = document.createElement('li');
-    liRoot.className = 'breadcrumb-item';
-    liRoot.innerHTML = `<a href="#" data-path="${side === 'left' ? '/mnt' : '/media/tape'}">${side === 'left' ? '/mnt' : '/media/tape'}</a>`;
-    liRoot.querySelector('a').addEventListener('click', (e) => {
-      e.preventDefault();
-      this.loadDirectory(side, e.target.dataset.path);
-    });
-    breadcrumb.appendChild(liRoot);
-    
-    // 子目录
-    for (let i = 0; i < parts.length; i++) {
-      currentPath += '/' + parts[i];
-      const fullPath = (side === 'left' ? '/mnt' : '/media/tape') + currentPath;
+    // 检查路径是否以基准路径开头
+    if (path.startsWith(basePath)) {
+      // 去掉基准路径部分
+      const relativePath = path.substring(basePath.length);
+      const relativeParts = relativePath.split('/').filter(p => p);
       
-      const li = document.createElement('li');
-      if (i === parts.length - 1) {
-        li.className = 'breadcrumb-item active';
-        li.textContent = parts[i];
-      } else {
-        li.className = 'breadcrumb-item';
-        li.innerHTML = `<a href="#" data-path="${fullPath}">${parts[i]}</a>`;
-        li.querySelector('a').addEventListener('click', (e) => {
-          e.preventDefault();
-          this.loadDirectory(side, e.target.dataset.path);
-        });
+      // 添加基准路径作为根
+      const liRoot = document.createElement('li');
+      liRoot.className = 'breadcrumb-item';
+      liRoot.innerHTML = `<a href="#" data-path="${basePath}">${basePath}</a>`;
+      liRoot.querySelector('a').addEventListener('click', (e) => {
+        e.preventDefault();
+        this.loadDirectory(side, e.target.dataset.path);
+      });
+      breadcrumb.appendChild(liRoot);
+      
+      // 添加相对路径部分
+      let currentFullPath = basePath;
+      for (let i = 0; i < relativeParts.length; i++) {
+        currentFullPath += '/' + relativeParts[i];
+        
+        const li = document.createElement('li');
+        if (i === relativeParts.length - 1) {
+          li.className = 'breadcrumb-item active';
+          li.textContent = relativeParts[i];
+        } else {
+          li.className = 'breadcrumb-item';
+          li.innerHTML = `<a href="#" data-path="${currentFullPath}">${relativeParts[i]}</a>`;
+          li.querySelector('a').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.loadDirectory(side, e.target.dataset.path);
+          });
+        }
+        breadcrumb.appendChild(li);
       }
-      breadcrumb.appendChild(li);
+    } else {
+      // 如果不是以基准路径开头（异常情况），简单显示
+      const liRoot = document.createElement('li');
+      liRoot.className = 'breadcrumb-item active';
+      liRoot.textContent = path;
+      breadcrumb.appendChild(liRoot);
     }
   }
 

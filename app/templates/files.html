@@ -127,19 +127,29 @@ function renderDirectoryTree(directories, parentId = null, level = 0) {
     // 顶级，显示统合的目录结构
     if (parentId === null && level === 0) {
         // 获取所有 parent_id 为 null 的目录（统合后的根目录）
-        const rootDirs = directories.filter(dir => dir.parent_id === null);
+        let rootDirs = directories.filter(dir => dir.parent_id === null);
         
         if (rootDirs.length === 0) {
             return '';
         }
         
+        // 优先显示名为'根目录'或path为空的目录
+        rootDirs.sort((a, b) => {
+            const aIsRoot = a.name === '根目录' || a.path === '';
+            const bIsRoot = b.name === '根目录' || b.path === '';
+            if (aIsRoot && !bIsRoot) return -1;
+            if (!aIsRoot && bIsRoot) return 1;
+            return a.name.localeCompare(b.name);
+        });
+        
         rootDirs.forEach(rootDir => {
             const hasChildren = directories.some(d => d.parent_id === rootDir.id);
+            const displayName = (rootDir.name === '根目录' || rootDir.path === '') ? '/' : rootDir.name;
             
             html += `
                 <div style="margin-bottom: 5px;">
                     <span id="dir-label-${rootDir.id}" onclick="toggleDirectory(${rootDir.id})" style="cursor: pointer;">
-                        ${hasChildren ? '[+]' : '   '} ${hasChildren ? '📂' : '📁'} ${rootDir.name !== '根目录' ? rootDir.name : '/'}
+                        ${hasChildren ? '[+]' : '   '} ${hasChildren ? '📂' : '📁'} ${displayName}
                     </span>
                     <div id="subdir-${rootDir.id}" class="subdirectory hidden">
                         ${renderDirectoryTree(directories, rootDir.id, level + 1)}
@@ -151,11 +161,14 @@ function renderDirectoryTree(directories, parentId = null, level = 0) {
         return html;
     }
     
-    const filteredDirs = directories.filter(dir => dir.parent_id === parentId);
+    let filteredDirs = directories.filter(dir => dir.parent_id === parentId);
+    
+    // 按名称排序
+    filteredDirs.sort((a, b) => a.name.localeCompare(b.name));
     
     filteredDirs.forEach(dir => {
         const hasChildren = directories.some(d => d.parent_id === dir.id);
-        const paddingLeft = level * 20;
+        const paddingLeft = (level) * 20;
         
         html += `
             <div style="padding-left: ${paddingLeft}px; margin-bottom: 5px;">
