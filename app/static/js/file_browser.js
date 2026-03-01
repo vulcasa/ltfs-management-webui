@@ -5,6 +5,7 @@ class FileBrowser {
     this.leftSelectedItems = new Set();
     this.rightSelectedItems = new Set();
     this.pollingInterval = null;
+    this.previousTransfers = new Map(); // 用于跟踪传输任务状态变化
     
     this.init();
   }
@@ -346,10 +347,44 @@ class FileBrowser {
       const data = await response.json();
       
       if (data.success) {
+        this.checkTransferCompletion(data.transfers);
         this.renderTransfers(data.transfers);
       }
     } catch (error) {
       console.error('加载传输列表失败:', error);
+    }
+  }
+
+  checkTransferCompletion(currentTransfers) {
+    let shouldRefreshLeft = false;
+    let shouldRefreshRight = false;
+
+    currentTransfers.forEach(transfer => {
+      const previousTransfer = this.previousTransfers.get(transfer.id);
+      
+      if (previousTransfer) {
+        const wasInProgress = previousTransfer.status === 'in_progress' || previousTransfer.status === 'pending';
+        const isCompleted = transfer.status === 'completed' || transfer.status === 'failed' || transfer.status === 'cancelled';
+        
+        if (wasInProgress && isCompleted) {
+          if (transfer.transfer_direction === 'container_to_tape') {
+            shouldRefreshLeft = true;
+            shouldRefreshRight = true;
+          } else if (transfer.transfer_direction === 'tape_to_container') {
+            shouldRefreshLeft = true;
+            shouldRefreshRight = true;
+          }
+        }
+      }
+      
+      this.previousTransfers.set(transfer.id, transfer);
+    });
+
+    if (shouldRefreshLeft) {
+      this.refreshBrowser('left');
+    }
+    if (shouldRefreshRight) {
+      this.refreshBrowser('right');
     }
   }
 
