@@ -1177,11 +1177,11 @@ def api_get_logs():
         }), 500
 
 
-# --- 文件浏览器路由 ---
+# --- 文件传输路由 ---
 
 @app.route('/file-browser')
 def file_browser():
-    """文件浏览器页面"""
+    """文件传输页面"""
     return render_template('file_browser.html')
 
 @app.route('/api/tape/mounted', methods=['GET'])
