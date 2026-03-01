@@ -1188,27 +1188,26 @@ def file_browser():
 def api_check_tape_mounted():
     """检查磁带是否已挂载"""
     try:
-        # 检查 /media/tape 目录是否存在且有内容
         tape_mount_point = '/media/tape'
-        is_mounted = os.path.exists(tape_mount_point)
         
-        # 进一步检查是否真的挂载了（查看是否有内容或特定文件）
-        if is_mounted:
+        # 优先检查数据库中的磁带状态
+        db_mounted = Tape.query.filter_by(status='mounted').first() is not None
+        
+        # 检查文件系统挂载点
+        is_mounted = False
+        if os.path.exists(tape_mount_point):
             try:
                 # 尝试列出目录内容
                 items = os.listdir(tape_mount_point)
-                # 如果目录存在但是空的，可能未挂载（取决于LTFS的行为）
-                # 这里我们假设只要目录存在就是已挂载状态
-                is_mounted = True
+                # 如果目录存在且不为空，认为已挂载
+                # 或者检查是否为真正的挂载点（使用 os.path.ismount）
+                is_mounted = os.path.ismount(tape_mount_point) or len(items) > 0
             except:
                 is_mounted = False
         
-        # 同时检查数据库中的磁带状态
-        db_mounted = Tape.query.filter_by(status='mounted').first() is not None
-        
         return jsonify({
             'success': True,
-            'mounted': is_mounted or db_mounted,
+            'mounted': db_mounted or is_mounted,
             'mount_point': tape_mount_point
         })
     except Exception as e:
@@ -1231,7 +1230,18 @@ def api_browser_list():
         # 如果是磁带路径，检查是否挂载
         if path.startswith('/media/tape'):
             tape_mount_point = '/media/tape'
-            if not os.path.exists(tape_mount_point):
+            
+            db_mounted = Tape.query.filter_by(status='mounted').first() is not None
+            
+            fs_mounted = False
+            if os.path.exists(tape_mount_point):
+                try:
+                    items = os.listdir(tape_mount_point)
+                    fs_mounted = os.path.ismount(tape_mount_point) or len(items) > 0
+                except:
+                    fs_mounted = False
+            
+            if not (db_mounted or fs_mounted):
                 return jsonify({
                     'success': False,
                     'message': '磁带未挂载',

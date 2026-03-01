@@ -257,7 +257,7 @@ class FileBrowser {
     
     const isMounted = await this.checkTapeMounted();
     if (!isMounted) {
-      alert('磁带未挂载，请挂载后重试');
+      alert('请先挂载磁带！');
       return;
     }
     
@@ -303,7 +303,7 @@ class FileBrowser {
     
     const isMounted = await this.checkTapeMounted();
     if (!isMounted) {
-      alert('磁带未挂载，请挂载后重试');
+      alert('请先挂载磁带！');
       return;
     }
     
