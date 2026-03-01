@@ -4,14 +4,14 @@
 <div class="row mb-4">
     <div class="col-12 d-flex justify-content-between align-items-center">
         <h2 class="mb-0">操作日志</h2>
-        <div class="d-flex gap-2">
-            <span class="badge bg-success" id="refreshStatus">
+        <div class="d-flex gap-2 align-items-center">
+            <span class="badge bg-success fs-6" id="refreshStatus" style="padding: 0.5rem 0.75rem; font-size: 1rem;">
                 <span id="refreshIcon">▶️</span> 自动刷新中
             </span>
-            <button class="btn btn-secondary" id="toggleRefreshBtn" onclick="toggleAutoRefresh()">
+            <button class="btn btn-secondary fs-6" id="toggleRefreshBtn" onclick="toggleAutoRefresh()" style="padding: 0.5rem 0.75rem; font-size: 1rem;">
                 <span>⏸️</span> 暂停刷新
             </button>
-            <button class="btn btn-primary" onclick="loadLogs()">
+            <button class="btn btn-primary fs-6" onclick="loadLogs()" style="padding: 0.5rem 0.75rem; font-size: 1rem;">
                 <span>🔄</span> 手动刷新
             </button>
         </div>
@@ -195,14 +195,14 @@ function toggleAutoRefresh() {
     
     if (autoRefreshEnabled) {
         btn.innerHTML = '<span>⏸️</span> 暂停刷新';
-        status.className = 'badge bg-success';
-        icon.textContent = '▶️';
+        status.className = 'badge bg-success fs-6';
+        status.style.cssText = 'padding: 0.5rem 0.75rem; font-size: 1rem;';
         status.innerHTML = '<span id="refreshIcon">▶️</span> 自动刷新中';
         startAutoRefresh();
     } else {
         btn.innerHTML = '<span>▶️</span> 继续刷新';
-        status.className = 'badge bg-secondary';
-        icon.textContent = '⏸️';
+        status.className = 'badge bg-secondary fs-6';
+        status.style.cssText = 'padding: 0.5rem 0.75rem; font-size: 1rem;';
         status.innerHTML = '<span id="refreshIcon">⏸️</span> 已暂停';
         stopAutoRefresh();
     }
