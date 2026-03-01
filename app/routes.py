@@ -667,7 +667,7 @@ def api_create_backup():
         backup_file = os.path.join(backup_dir, f'tape_backup_{timestamp}.db')
         
         # 复制数据库文件
-        db_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tape_metadata.db')
+        db_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'instance', 'tape_metadata.db')
         shutil.copy2(db_file, backup_file)
         
         # 获取备份文件信息
